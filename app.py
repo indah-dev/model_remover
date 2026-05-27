@@ -7,6 +7,7 @@ import cv2
 import io
 import base64
 from pdf2image import convert_from_bytes
+from huggingface_hub import hf_hub_download  # Import baru untuk Hugging Face
 
 # ==============================================================================
 # 1. KONFIGURASI DASHBOARD
@@ -29,6 +30,7 @@ def get_base64_of_bin_file(bin_file):
     except FileNotFoundError:
         return None
 
+# Pastikan huruf besar/kecil nama file "bg-masthead.jpg" sama persis dengan yang ada di GitHub
 bg_image_base64 = get_base64_of_bin_file("bg-masthead.jpg")
 
 if bg_image_base64:
@@ -147,8 +149,17 @@ def ssim_metric(y_true, y_pred):
 
 @st.cache_resource
 def load_unet_model():
-    model_path = 'model_unet_rgb_final.keras' 
-    return keras.models.load_model(model_path, custom_objects={'psnr_metric': psnr_metric, 'ssim_metric': ssim_metric})
+    # Mengunduh model langsung dari Hugging Face Hub
+    model_path = hf_hub_download(
+        repo_id="indah-dev/model-restorasi-kcv", 
+        filename="model_unet_rgb_final.keras"
+    )
+    
+    # Memuat model yang sudah diunduh beserta custom objects
+    return keras.models.load_model(
+        model_path, 
+        custom_objects={'psnr_metric': psnr_metric, 'ssim_metric': ssim_metric}
+    )
 
 # ==============================================================================
 # 5. SIDEBAR KONTROL
@@ -160,7 +171,7 @@ with st.sidebar:
         model = load_unet_model()
         st.success("🤖 Status AI: Siap Digunakan")
     except Exception as e:
-        st.error("🔴 Status AI: Gagal Dimuat")
+        st.error(f"🔴 Status AI: Gagal Dimuat. Detail: {e}")
         st.stop()
         
     st.markdown("<div class='glass-card' style='padding: 15px;'>", unsafe_allow_html=True)
