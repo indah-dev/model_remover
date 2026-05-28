@@ -6,6 +6,7 @@ from PIL import Image
 import cv2
 import io
 import base64
+import gc  # <-- Import Garbage Collection untuk hemat RAM
 from pdf2image import convert_from_bytes
 from huggingface_hub import hf_hub_download
 
@@ -157,7 +158,7 @@ def load_unet_model():
     )
 
 # ==============================================================================
-# 5. PARAMETER DEFAULT (SIDEBAR DIHAPUS, BERJALAN DI LATAR BELAKANG)
+# 5. PARAMETER DEFAULT (BERJALAN DI LATAR BELAKANG)
 # ==============================================================================
 max_dimension = 800
 padding_multiple = 32
@@ -190,54 +191,79 @@ def smart_resize_for_ai(image_array, max_dim=800):
 # 7. RUANG KERJA UTAMA (WORKSPACE UPLOAD)
 # ==============================================================================
 st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+# accept_multiple_files=False agar dipaksa menjadi 1 file saja
 uploaded_file = st.file_uploader(
-    "📥 Tarik & Lepas Dokumen Anda di Sini (Mendukung Gambar Tunggal maupun File PDF Multi-Halaman)", 
-    type=["jpg", "jpeg", "png", "pdf"]
+    "📥 Tarik & Lepas Dokumen Anda di Sini (Maksimal 200 MB)", 
+    type=["jpg", "jpeg", "png", "pdf"],
+    accept_multiple_files=False
 )
 st.markdown("</div>", unsafe_allow_html=True)
 
 if uploaded_file is not None:
+    # Pengecekan ukuran file (maksimal 200 MB)
+    file_size_mb = uploaded_file.size / (1024 * 1024)
+    if file_size_mb > 200:
+        st.error(f"❌ Ukuran file terlalu besar ({file_size_mb:.1f} MB). Batas maksimal adalah 200 MB.")
+        st.stop()
+
     filename = uploaded_file.name
     pages = []
     
     if filename.lower().endswith('.pdf'):
-        with st.spinner("🔄 Mengekstrak halaman PDF secara berurutan..."):
+        with st.spinner("🔄 Mengekstrak halaman PDF... (Tunggu sebentar jika file tebal)"):
             pdf_bytes = uploaded_file.read()
-            pages = convert_from_bytes(pdf_bytes, dpi=150)
+            # Turunkan DPI agar memori server tidak penuh
+            pages = convert_from_bytes(pdf_bytes, dpi=120)
     else:
         image_raw = Image.open(uploaded_file).convert('RGB')
         pages = [image_raw]
 
     enhanced_pages = []
+    total_pages = len(pages)
+    
+    st.markdown(f"<p style='color: #00F2FE; font-weight: bold;'>Memproses {total_pages} halaman dokumen...</p>", unsafe_allow_html=True)
+    progress_bar = st.progress(0)
 
     for i, page in enumerate(pages):
-        st.markdown(f"<h3 style='color: #00F2FE;'>📄 Memproses Halaman {i+1} dari {len(pages)}</h3>", unsafe_allow_html=True)
+        status_text = st.empty()
+        status_text.markdown(f"**Membasmi bayangan pada halaman {i+1} dari {total_pages}...**")
         
         img_arr = np.array(page, dtype=np.float32) / 255.0
         
-        with st.spinner(f"Membasmi bayangan pada halaman {i+1}... Mohon tunggu sebentar..."):
-            img_arr_resized = smart_resize_for_ai(img_arr, max_dim=max_dimension)
-            padded_img, orig_h, orig_w = pad_to_multiple(img_arr_resized, multiple=padding_multiple)
-            
-            img_batch = np.expand_dims(padded_img, axis=0)
-            pred = model.predict(img_batch, verbose=0)[0]
-            
-            pred_cropped = pred[:orig_h, :orig_w, :]
-            pred_uint8 = (np.clip(pred_cropped, 0, 1) * 255).astype(np.uint8)
-            cleaned_page_image = Image.fromarray(pred_uint8)
-            enhanced_pages.append(cleaned_page_image)
+        img_arr_resized = smart_resize_for_ai(img_arr, max_dim=max_dimension)
+        padded_img, orig_h, orig_w = pad_to_multiple(img_arr_resized, multiple=padding_multiple)
         
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown("<div class='glass-card' style='text-align: center;'>", unsafe_allow_html=True)
-            st.markdown("<p style='font-weight: bold; margin-top:0;'>Foto Dokumen Asli (Kotor/Berbayang)</p>", unsafe_allow_html=True)
-            st.image(img_arr_resized, use_container_width=True)
-            st.markdown("</div>", unsafe_allow_html=True)
-        with col2:
-            st.markdown("<div class='glass-card' style='text-align: center;'>", unsafe_allow_html=True)
-            st.markdown("<p style='font-weight: bold; margin-top:0;'>Hasil Bersih Bebas Bayangan</p>", unsafe_allow_html=True)
-            st.image(cleaned_page_image, use_container_width=True)
-            st.markdown("</div>", unsafe_allow_html=True)
+        img_batch = np.expand_dims(padded_img, axis=0)
+        pred = model.predict(img_batch, verbose=0)[0]
+        
+        pred_cropped = pred[:orig_h, :orig_w, :]
+        pred_uint8 = (np.clip(pred_cropped, 0, 1) * 255).astype(np.uint8)
+        cleaned_page_image = Image.fromarray(pred_uint8)
+        enhanced_pages.append(cleaned_page_image)
+        
+        # --- TRIK 1: LIMITASI RENDER UI BROWSER ---
+        # Hanya tampilkan preview perbandingan untuk Halaman Pertama (index 0) saja
+        if i == 0:
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown("<div class='glass-card' style='text-align: center;'>", unsafe_allow_html=True)
+                st.markdown("<p style='font-weight: bold; margin-top:0;'>Foto Asli (Preview Halaman 1)</p>", unsafe_allow_html=True)
+                st.image(img_arr_resized, use_container_width=True)
+                st.markdown("</div>", unsafe_allow_html=True)
+            with col2:
+                st.markdown("<div class='glass-card' style='text-align: center;'>", unsafe_allow_html=True)
+                st.markdown("<p style='font-weight: bold; margin-top:0;'>Hasil Bersih (Preview Halaman 1)</p>", unsafe_allow_html=True)
+                st.image(cleaned_page_image, use_container_width=True)
+                st.markdown("</div>", unsafe_allow_html=True)
+
+        # Update Progress Bar
+        progress_bar.progress((i + 1) / total_pages)
+        status_text.empty()
+        
+        # --- TRIK 2: GARBAGE COLLECTION ---
+        # Bersihkan memori RAM secara paksa setiap selesai 1 halaman
+        del page, img_arr, img_arr_resized, padded_img, img_batch, pred, pred_cropped, pred_uint8
+        gc.collect()
 
     # PANEL EXPORT AKHIR
     st.markdown("<div class='glass-card' style='text-align: center;'>", unsafe_allow_html=True)
@@ -254,7 +280,7 @@ if uploaded_file is not None:
         mime_type = "image/jpeg"
         
     st.download_button(
-        label=f"💾 UNDUH BERKAS HASIL RESTORASI",
+        label=f"💾 UNDUH BERKAS HASIL RESTORASI ({total_pages} Halaman)",
         data=export_buffer.getvalue(),
         file_name=download_name,
         mime=mime_type
