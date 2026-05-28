@@ -6,7 +6,7 @@ from PIL import Image
 import cv2
 import io
 import base64
-import gc  # <-- Import Garbage Collection untuk hemat RAM
+import gc
 from pdf2image import convert_from_bytes
 from huggingface_hub import hf_hub_download
 
@@ -20,7 +20,7 @@ st.set_page_config(
 )
 
 # ==============================================================================
-# 2. INJEKSI CSS (TAMPILAN DIPERTAHANKAN 100%)
+# 2. INJEKSI CSS (TAMPILAN DIPERTAHANKAN + KOTAK UPLOAD DARK MODE)
 # ==============================================================================
 def get_base64_of_bin_file(bin_file):
     try:
@@ -91,12 +91,23 @@ st.markdown(f"""
         transform: scale(1.03);
     }}
 
-    /* Kotak Upload */
-    .stFileUploader > div > div {{
-        background-color: rgba(29, 128, 159, 0.15);
-        border: 2px dashed #1D809F;
-        border-radius: 15px;
-        padding: 25px;
+    /* Kotak Upload Dark Mode */
+    [data-testid="stFileUploaderDropzone"] {{
+        background-color: #1F2229 !important;
+        border: 1px solid #3E4351 !important;
+        border-radius: 8px !important;
+    }}
+    [data-testid="stFileUploaderDropzone"] div, 
+    [data-testid="stFileUploaderDropzone"] span, 
+    [data-testid="stFileUploaderDropzone"] p,
+    [data-testid="stFileUploaderDropzone"] small {{
+        color: #E2E8F0 !important;
+    }}
+    [data-testid="stFileUploaderDropzone"] button {{
+        background-color: #0F1115 !important;
+        color: #FFFFFF !important;
+        border: 1px solid #3E4351 !important;
+        border-radius: 6px !important;
     }}
 
     /* Watermark Style */
@@ -191,7 +202,6 @@ def smart_resize_for_ai(image_array, max_dim=800):
 # 7. RUANG KERJA UTAMA (WORKSPACE UPLOAD)
 # ==============================================================================
 st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-# accept_multiple_files=False agar dipaksa menjadi 1 file saja
 uploaded_file = st.file_uploader(
     "📥 Tarik & Lepas Dokumen Anda di Sini (Maksimal 200 MB)", 
     type=["jpg", "jpeg", "png", "pdf"],
@@ -200,7 +210,7 @@ uploaded_file = st.file_uploader(
 st.markdown("</div>", unsafe_allow_html=True)
 
 if uploaded_file is not None:
-    # Pengecekan ukuran file (maksimal 200 MB)
+    # Pengecekan ukuran file
     file_size_mb = uploaded_file.size / (1024 * 1024)
     if file_size_mb > 200:
         st.error(f"❌ Ukuran file terlalu besar ({file_size_mb:.1f} MB). Batas maksimal adalah 200 MB.")
