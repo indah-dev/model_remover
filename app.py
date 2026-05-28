@@ -7,7 +7,7 @@ import cv2
 import io
 import base64
 from pdf2image import convert_from_bytes
-from huggingface_hub import hf_hub_download  # Import baru untuk Hugging Face
+from huggingface_hub import hf_hub_download
 
 # ==============================================================================
 # 1. KONFIGURASI DASHBOARD
@@ -15,12 +15,11 @@ from huggingface_hub import hf_hub_download  # Import baru untuk Hugging Face
 st.set_page_config(
     page_title="Sistem Restorasi Dokumen KCV",
     page_icon="✨",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide"
 )
 
 # ==============================================================================
-# 2. INJEKSI CSS REVISI (LATAR BELAKANG & VISIBILITAS TEKS)
+# 2. INJEKSI CSS (TAMPILAN DIPERTAHANKAN 100%)
 # ==============================================================================
 def get_base64_of_bin_file(bin_file):
     try:
@@ -30,7 +29,6 @@ def get_base64_of_bin_file(bin_file):
     except FileNotFoundError:
         return None
 
-# Pastikan huruf besar/kecil nama file "bg-masthead.jpg" sama persis dengan yang ada di GitHub
 bg_image_base64 = get_base64_of_bin_file("bg-masthead.jpg")
 
 if bg_image_base64:
@@ -149,36 +147,26 @@ def ssim_metric(y_true, y_pred):
 
 @st.cache_resource
 def load_unet_model():
-    # Mengunduh model langsung dari Hugging Face Hub
     model_path = hf_hub_download(
-        repo_id="indah-dev/model-restorasi-kcv", 
+        repo_id="dalgiuyu/model-restorasi-kcv", 
         filename="model_unet_rgb_final.keras"
     )
-    
-    # Memuat model yang sudah diunduh beserta custom objects
     return keras.models.load_model(
         model_path, 
         custom_objects={'psnr_metric': psnr_metric, 'ssim_metric': ssim_metric}
     )
 
 # ==============================================================================
-# 5. SIDEBAR KONTROL
+# 5. PARAMETER DEFAULT (SIDEBAR DIHAPUS, BERJALAN DI LATAR BELAKANG)
 # ==============================================================================
-with st.sidebar:
-    st.markdown("<h2>⚙️ Parameter Sistem</h2>", unsafe_allow_html=True)
-    st.write("---")
-    try:
-        model = load_unet_model()
-        st.success("🤖 Status AI: Siap Digunakan")
-    except Exception as e:
-        st.error(f"🔴 Status AI: Gagal Dimuat. Detail: {e}")
-        st.stop()
-        
-    st.markdown("<div class='glass-card' style='padding: 15px;'>", unsafe_allow_html=True)
-    max_dimension = st.sidebar.slider("Dimensi Maksimal Resize", min_value=400, max_value=1200, value=800, step=100)
-    padding_multiple = st.sidebar.select_slider("Faktor Bantalan (Padding)", options=[16, 32, 64], value=32)
-    st.markdown("</div>", unsafe_allow_html=True)
-    st.caption("Eksperimen Konsentrasi KCV")
+max_dimension = 800
+padding_multiple = 32
+
+try:
+    model = load_unet_model()
+except Exception as e:
+    st.error(f"🔴 AI Gagal Dimuat. Pastikan Repositori Hugging Face diset 'Public' dan namanya benar! Detail: {e}")
+    st.stop()
 
 # ==============================================================================
 # 6. LOGIKA PREPROCESSING
@@ -215,7 +203,6 @@ if uploaded_file is not None:
     if filename.lower().endswith('.pdf'):
         with st.spinner("🔄 Mengekstrak halaman PDF secara berurutan..."):
             pdf_bytes = uploaded_file.read()
-            # JALUR POPPLER WINDOWS SUDAH DIHAPUS AGAR SESUAI DENGAN SERVER CLOUD LINUX
             pages = convert_from_bytes(pdf_bytes, dpi=150)
     else:
         image_raw = Image.open(uploaded_file).convert('RGB')
